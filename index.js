@@ -28,25 +28,70 @@ try {
 }
 
 // Configuración de JIRA
-const JIRA_API_BASE = 'https://jira.globaldevtools.bbva.com/rest/api/2';
-const JIRA_COOKIES = process.env.JIRA_COOKIES || '';
+const JIRA_API_BASE = process.env.JIRA_BASE_URL || 'https://jira.globaldevtools.bbva.com';
 
-// Función para hacer solicitudes a JIRA
-async function jiraApiRequest(endpoint) {
-  try {
-    const response = await axios.get(`${JIRA_API_BASE}${endpoint}`, {
-      headers: {
-        'Cookie': JIRA_COOKIES,
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0',
-        'Accept': 'application/json',
-        'X-Atlassian-Token': 'no-check'
+// Función mejorada para hacer solicitudes a JIRA con reintentos
+async function jiraApiRequest(endpoint, retries = 3) {
+  // Obtener las cookies actuales
+  const cookies = process.env.JIRA_COOKIES || '';
+  
+  if (!cookies || cookies.trim() === '') {
+    throw new Error('JIRA_COOKIES no está configurado. Por favor, proporciona las cookies de autenticación.');
+  }
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`Intento ${attempt} de ${retries} para: ${endpoint}`);
+      
+      const response = await axios({
+        method: 'GET',
+        url: `${JIRA_API_BASE}${endpoint}`,
+        headers: {
+          'Cookie': cookies,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'X-Atlassian-Token': 'no-check',
+          'Cache-Control': 'no-cache'
+        },
+        timeout: 10000, // 10 segundos de timeout
+        validateStatus: function (status) {
+          return status >= 200 && status < 300;
+        }
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error(`Error en intento ${attempt}:`, error.message);
+      
+      if (error.response) {
+        console.error('Detalles del error:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          headers: error.response.headers
+        });
+        
+        // Si es un error 401, las cookies han expirado
+        if (error.response.status === 401) {
+          throw new Error('Error de autenticación: Las cookies de JIRA han expirado. Por favor, actualízalas.');
+        }
+        
+        // Si es un error 500 y es el último intento
+        if (error.response.status === 500 && attempt === retries) {
+          throw new Error('Error del servidor JIRA (500). Posibles causas: permisos insuficientes, issue no existe, o problema temporal del servidor.');
+        }
       }
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error en JIRA API:', error.message);
-    throw error;
+      
+      // Si no es el último intento, esperar antes de reintentar
+      if (attempt < retries) {
+        const waitTime = Math.pow(2, attempt - 1) * 1000; // Backoff exponencial
+        console.log(`Esperando ${waitTime}ms antes de reintentar...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      } else {
+        // Si es el último intento, lanzar el error
+        throw error;
+      }
+    }
   }
 }
 
@@ -88,7 +133,7 @@ function getFirstTransitionDate(changelog, targetStatus) {
 // Función para obtener detalles de una feature
 async function getFeatureDetails(featureKey) {
   try {
-    const featureData = await jiraApiRequest(`/issue/${featureKey}?expand=changelog&fields=summary,status,customfield_10272,created,updated`);
+    const featureData = await jiraApiRequest(`/rest/api/2/issue/${featureKey}?expand=changelog&fields=summary,status,customfield_10272,created,updated`);
     
     const featureTitle = featureData.fields.summary || 'Título no disponible';
     const featureStatus = featureData.fields.status?.name || 'Estado no disponible';
@@ -172,7 +217,29 @@ app.get('/', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Server is running' });
+  res.json({ 
+    status: 'OK', 
+    message: 'Server is running',
+    jiraCookiesConfigured: !!(process.env.JIRA_COOKIES && process.env.JIRA_COOKIES.trim() !== ''),
+    googleSheetsConfigured: !!sheets
+  });
+});
+
+// Endpoint para validar la configuración
+app.get('/api/config-status', (req, res) => {
+  const status = {
+    jira: {
+      baseUrl: JIRA_API_BASE,
+      cookiesConfigured: !!(process.env.JIRA_COOKIES && process.env.JIRA_COOKIES.trim() !== ''),
+      cookiesLength: process.env.JIRA_COOKIES ? process.env.JIRA_COOKIES.length : 0
+    },
+    googleSheets: {
+      configured: !!sheets,
+      sheetId: process.env.GOOGLE_SHEET_ID ? 'Configurado' : 'No configurado'
+    }
+  };
+  
+  res.json(status);
 });
 
 // Endpoint para procesar E2E
@@ -183,16 +250,33 @@ app.post('/api/process-e2e', async (req, res) => {
     return res.status(400).json({ error: 'E2E ID es requerido' });
   }
   
+  // Validar formato del E2E ID
+  if (!e2eId.match(/^[A-Z]+-\d+$/)) {
+    return res.status(400).json({ 
+      error: 'Formato de E2E ID inválido',
+      message: 'El formato debe ser PROJECT-NUMBER (ej: E2E-295970)'
+    });
+  }
+  
   // Actualizar cookies si se proporcionaron
-  if (jiraCookies) {
+  if (jiraCookies && jiraCookies.trim() !== '') {
     process.env.JIRA_COOKIES = jiraCookies;
+    console.log('Cookies de JIRA actualizadas');
+  }
+  
+  // Verificar que hay cookies configuradas
+  if (!process.env.JIRA_COOKIES || process.env.JIRA_COOKIES.trim() === '') {
+    return res.status(401).json({ 
+      error: 'Autenticación requerida',
+      message: 'No hay cookies de JIRA configuradas. Por favor, proporciona las cookies de autenticación.'
+    });
   }
   
   try {
     console.log(`Procesando E2E: ${e2eId}`);
     
     // Obtener información del E2E
-    const e2eData = await jiraApiRequest(`/issue/${e2eId}?fields=issuelinks`);
+    const e2eData = await jiraApiRequest(`/rest/api/2/issue/${e2eId}?fields=issuelinks`);
     
     // Extraer features vinculadas
     const features = [];
@@ -236,7 +320,15 @@ app.post('/api/process-e2e', async (req, res) => {
     
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ error: 'Error procesando la solicitud', details: error.message });
+    
+    // Devolver errores más específicos
+    if (error.message.includes('autenticación')) {
+      res.status(401).json({ error: 'Error de autenticación', details: error.message });
+    } else if (error.message.includes('500')) {
+      res.status(502).json({ error: 'Error del servidor JIRA', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error procesando la solicitud', details: error.message });
+    }
   }
 });
 
@@ -245,5 +337,6 @@ app.listen(PORT, () => {
   console.log('Variables de entorno configuradas:');
   console.log('- GOOGLE_CREDENTIALS_JSON:', process.env.GOOGLE_CREDENTIALS_JSON ? 'Sí' : 'No');
   console.log('- GOOGLE_SHEET_ID:', process.env.GOOGLE_SHEET_ID ? 'Sí' : 'No');
-  console.log('- JIRA_COOKIES:', process.env.JIRA_COOKIES ? 'Sí' : 'No');
+  console.log('- JIRA_COOKIES:', process.env.JIRA_COOKIES ? 'Sí (longitud: ' + process.env.JIRA_COOKIES.length + ')' : 'No');
+  console.log('- JIRA_BASE_URL:', JIRA_API_BASE);
 });
