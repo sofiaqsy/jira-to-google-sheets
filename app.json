@@ -1,4 +1,31 @@
 {
-  "name": "nodejs",
-  "description": "Node.js buildpack"
+  "name": "jira-to-google-sheets",
+  "description": "JIRA to Google Sheets extractor with web interface",
+  "repository": "https://github.com/sofiaqsy/jira-to-google-sheets",
+  "keywords": ["jira", "google-sheets", "nodejs", "express", "heroku"],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "free"
+    }
+  },
+  "env": {
+    "GOOGLE_CREDENTIALS_JSON": {
+      "description": "Google Service Account credentials in JSON format",
+      "required": true
+    },
+    "GOOGLE_SHEET_ID": {
+      "description": "ID of the Google Sheet to update",
+      "required": true
+    },
+    "JIRA_COOKIES": {
+      "description": "JIRA authentication cookies",
+      "required": false
+    }
+  }
 }
