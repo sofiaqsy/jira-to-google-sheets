@@ -214,6 +214,26 @@
             display: block;
             margin-bottom: 5px;
         }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+            font-size: 14px;
+        }
+        
+        .warning-box a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .warning-box a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -260,6 +280,14 @@
     </div>
     
     <script>
+        // Limpiar y validar el E2E ID al cargar la página
+        document.addEventListener('DOMContentLoaded', () => {
+            const e2eInput = document.getElementById('e2eId');
+            if (e2eInput.value) {
+                e2eInput.value = e2eInput.value.trim();
+            }
+        });
+        
         document.getElementById('processForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -267,9 +295,20 @@
             const loadingDiv = document.querySelector('.loading');
             const resultDiv = document.querySelector('.result');
             
-            // Obtener valores del formulario
-            const e2eId = document.getElementById('e2eId').value;
-            const jiraCookies = document.getElementById('jiraCookies').value;
+            // Obtener valores del formulario y limpiarlos
+            const e2eId = document.getElementById('e2eId').value.trim();
+            const jiraCookies = document.getElementById('jiraCookies').value.trim();
+            
+            // Validar formato del E2E ID en el cliente
+            if (!e2eId.match(/^[A-Z]+-\d+$/)) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <strong>❌ Error:</strong><br>
+                    Formato de E2E ID inválido. El formato debe ser PROJECT-NUMBER (ej: E2E-295970)
+                `;
+                resultDiv.style.display = 'block';
+                return;
+            }
             
             // Mostrar loading
             submitBtn.disabled = true;
@@ -300,7 +339,30 @@
                         </a>
                     `;
                 } else {
-                    throw new Error(data.error || 'Error desconocido');
+                    // Mostrar mensaje de error más específico
+                    let errorMessage = data.error || 'Error desconocido';
+                    let detailsMessage = '';
+                    
+                    if (data.details) {
+                        detailsMessage = `<br><small>${data.details}</small>`;
+                    }
+                    
+                    // Si es error de autenticación, agregar instrucciones
+                    if (response.status === 401 || errorMessage.includes('autenticación')) {
+                        errorMessage += `<br><br>
+                        <div class="warning-box" style="margin-top: 10px;">
+                            <strong>🔐 Para obtener las cookies de JIRA:</strong><br>
+                            1. Inicia sesión en JIRA<br>
+                            2. Abre las herramientas de desarrollador (F12)<br>
+                            3. Ve a la pestaña Network/Red<br>
+                            4. Recarga la página<br>
+                            5. Busca cualquier petición a JIRA<br>
+                            6. Copia el valor del header "Cookie"<br>
+                            7. Pégalo en el campo de cookies arriba
+                        </div>`;
+                    }
+                    
+                    throw new Error(errorMessage + detailsMessage);
                 }
             } catch (error) {
                 resultDiv.className = 'result error';
@@ -314,6 +376,26 @@
                 resultDiv.style.display = 'block';
             }
         });
+        
+        // Verificar el estado de la configuración al cargar
+        fetch('/api/config-status')
+            .then(res => res.json())
+            .then(data => {
+                console.log('Estado de configuración:', data);
+                
+                // Si no hay cookies configuradas, mostrar advertencia
+                if (!data.jira.cookiesConfigured) {
+                    const container = document.querySelector('.container');
+                    const warningHtml = `
+                        <div class="warning-box">
+                            <strong>⚠️ Advertencia:</strong> No hay cookies de JIRA configuradas en el servidor.<br>
+                            Deberás proporcionar las cookies en el formulario o configurarlas en Heroku.
+                        </div>
+                    `;
+                    container.insertAdjacentHTML('afterbegin', warningHtml);
+                }
+            })
+            .catch(err => console.error('Error verificando configuración:', err));
     </script>
 </body>
 </html>
