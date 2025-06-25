@@ -250,8 +250,11 @@ app.post('/api/process-e2e', async (req, res) => {
     return res.status(400).json({ error: 'E2E ID es requerido' });
   }
   
-  // Validar formato del E2E ID
-  if (!e2eId.match(/^[A-Z]+-\d+$/)) {
+  // Limpiar el E2E ID
+  const cleanE2eId = e2eId.trim();
+  
+  // Validar formato del E2E ID - Actualizado para aceptar letras y números
+  if (!cleanE2eId.match(/^[A-Z0-9]+-\d+$/)) {
     return res.status(400).json({ 
       error: 'Formato de E2E ID inválido',
       message: 'El formato debe ser PROJECT-NUMBER (ej: E2E-295970)'
@@ -273,10 +276,10 @@ app.post('/api/process-e2e', async (req, res) => {
   }
   
   try {
-    console.log(`Procesando E2E: ${e2eId}`);
+    console.log(`Procesando E2E: ${cleanE2eId}`);
     
     // Obtener información del E2E
-    const e2eData = await jiraApiRequest(`/rest/api/2/issue/${e2eId}?fields=issuelinks`);
+    const e2eData = await jiraApiRequest(`/rest/api/2/issue/${cleanE2eId}?fields=issuelinks`);
     
     // Extraer features vinculadas
     const features = [];
@@ -309,11 +312,11 @@ app.post('/api/process-e2e', async (req, res) => {
     }
     
     // Actualizar Google Sheet
-    await updateGoogleSheet(e2eId, features);
+    await updateGoogleSheet(cleanE2eId, features);
     
     res.json({
       message: 'Procesamiento completado',
-      e2eId: e2eId,
+      e2eId: cleanE2eId,
       featuresCount: features.length,
       googleSheetUrl: `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}`
     });
