@@ -1,0 +1,8 @@
+{
+  "name": "heroku-buildpack-nodejs",
+  "env": {
+    "NPM_CONFIG_PRODUCTION": "true",
+    "USE_NPM_INSTALL": "true",
+    "NPM_CONFIG_LOGLEVEL": "error"
+  }
+}
