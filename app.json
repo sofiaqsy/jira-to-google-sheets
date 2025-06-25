@@ -26,6 +26,12 @@
     "JIRA_COOKIES": {
       "description": "JIRA authentication cookies",
       "required": false
+    },
+    "NPM_CONFIG_PRODUCTION": {
+      "value": "true"
+    },
+    "USE_NPM_INSTALL": {
+      "value": "true"
     }
   }
 }
