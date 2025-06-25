@@ -299,8 +299,8 @@
             const e2eId = document.getElementById('e2eId').value.trim();
             const jiraCookies = document.getElementById('jiraCookies').value.trim();
             
-            // Validar formato del E2E ID en el cliente
-            if (!e2eId.match(/^[A-Z]+-\d+$/)) {
+            // Validar formato del E2E ID en el cliente - Actualizado para aceptar letras y números
+            if (!e2eId.match(/^[A-Z0-9]+-\d+$/)) {
                 resultDiv.className = 'result error';
                 resultDiv.innerHTML = `
                     <strong>❌ Error:</strong><br>
